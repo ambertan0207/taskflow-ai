@@ -1,10 +1,11 @@
-
-name: Deploy TaskFlow AI to GitHub Pages
+name: Publish TaskFlow AI assignment to GitHub Pages
 
 on:
   push:
-    branches:
-      - master
+    branches: ["single-html-review"]
+    paths:
+      - "site/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -13,40 +14,69 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: github-pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout assignment branch
         uses: actions/checkout@v4
+
+      - name: Validate standalone HTML and inline JavaScript
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const html = fs.readFileSync('site/index.html', 'utf8');
+          if (!/^<!doctype html>/i.test(html.trim())) throw new Error('Missing HTML doctype');
+          if (!/<style[\s>]/i.test(html) || !/<script[\s>]/i.test(html)) throw new Error('Expected embedded CSS and JavaScript');
+          if (/<script[^>]+src=/i.test(html)) throw new Error('External script source found');
+          if (!html.includes('id="quickJotForm"') || !html.includes('id="quickJotInput"')) throw new Error('Overview quick jot is missing');
+          const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
+          if (!scripts.length) throw new Error('No inline JavaScript found');
+          scripts.forEach((script, i) => new vm.Script(script, { filename: `inline-script-${i + 1}.js` }));
+          console.log(`Validated standalone HTML (${Buffer.byteLength(html)} bytes), ${scripts.length} inline script(s).`);
+          NODE
+
+      - name: Checkout current master site
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          path: site-build
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: site-build/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Build the current master site
+        working-directory: site-build
+        run: |
+          npm ci
+          npm run build
 
-      - name: Build
-        run: npm run build
+      - name: Add the assignment as a separate page
+        run: |
+          mkdir -p site-build/dist/assignment
+          cp site/index.html site-build/dist/assignment/index.html
 
-      - name: Upload artifact
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: ./site-build/dist
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
