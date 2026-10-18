@@ -24,7 +24,7 @@
 <body>
 <div class="journal" id="app">
   <header class="masthead">
-    <div><div class="brand-name">半醒日誌 <span>TASKFLOW AI</span></div><div class="brand-subtitle">把腦中的待辦，整理成下一步行動。</div></div>
+    <div><div class="brand-name">TaskFlow <span>AI</span></div><div class="brand-subtitle">把腦中的待辦，整理成下一步行動。</div></div>
     <div class="date-block"><div class="date-large" id="dateLarge"></div><div class="date-detail" id="dateDetail"></div></div>
   </header>
   <nav class="workspace-tabs" aria-label="工作區">
@@ -83,19 +83,22 @@
 (function(){
 'use strict';
 const TASK_KEY='taskflow-tasks', LIFE_KEY='taskflow-life-events';
+const memoryStorage={data:Object.create(null),getItem(key){return Object.prototype.hasOwnProperty.call(this.data,key)?this.data[key]:null},setItem(key,value){this.data[key]=String(value)},removeItem(key){delete this.data[key]}};
+let backingStorage;try{backingStorage=window.localStorage;backingStorage.getItem('__taskflow_storage_check__')}catch{backingStorage=memoryStorage}
+const safeStorage={getItem(key){try{return backingStorage.getItem(key)}catch{return memoryStorage.getItem(key)}},setItem(key,value){try{backingStorage.setItem(key,value)}catch{memoryStorage.setItem(key,value)}},removeItem(key){try{backingStorage.removeItem(key)}catch{memoryStorage.removeItem(key)}}};
 const $=id=>document.getElementById(id);
 const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 const pad=n=>String(n).padStart(2,'0');
 const addDays=(day,amount)=>{const d=new Date(day+'T12:00:00');d.setDate(d.getDate()+amount);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`;
-const loadArray=key=>{try{const x=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(x)?x:[]}catch{return []}};
+const loadArray=key=>{try{const x=JSON.parse(safeStorage.getItem(key)||'[]');return Array.isArray(x)?x:[]}catch{return []}};
 let tasks=loadArray(TASK_KEY), events=loadArray(LIFE_KEY), view='overview', editTaskId=null, editLifeId=null;
 let filters={overview:'all',workspace:'all',life:'all'};
-function save(){localStorage.setItem(TASK_KEY,JSON.stringify(tasks));localStorage.setItem(LIFE_KEY,JSON.stringify(events));renderAll()}
+function save(){safeStorage.setItem(TASK_KEY,JSON.stringify(tasks));safeStorage.setItem(LIFE_KEY,JSON.stringify(events));renderAll()}
 function setDateHeader(){const d=new Date();$('dateLarge').textContent=`${d.getMonth()+1} / ${d.getDate()}`;$('dateDetail').textContent=d.toLocaleDateString('zh-TW',{weekday:'long',year:'numeric',month:'long'});}
 function classify(text,selected='auto'){
- const m=[/餐廳|酒館|半醒|備料|排班|員工|酒水|啤酒|訂酒|訂貨|訂位|營運|採購|庫存|設備|海報|活動企劃/.test(text),/課程|課堂|上課|作業|繳交|考試|報告|複習|統計|微積分|SAS|程式|讀書/.test(text),/朋友|家人|同學|吃飯|晚餐|午餐|早餐|看展|展覽|逛超市|超市|購物|逛街|旅行|旅遊|約會|聚餐|聚會|電影|散步|咖啡/.test(text)];
+ const m=[/餐廳|酒館|備料|排班|員工|酒水|啤酒|訂酒|訂貨|訂位|營運|採購|庫存|設備|海報|活動企劃/.test(text),/課程|課堂|上課|作業|繳交|考試|報告|複習|統計|微積分|SAS|程式|讀書/.test(text),/朋友|家人|同學|吃飯|晚餐|午餐|早餐|看展|展覽|逛超市|超市|購物|逛街|旅行|旅遊|約會|聚餐|聚會|電影|散步|咖啡/.test(text)];
  const found=m.flatMap((yes,i)=>yes?['business','study','life'][i]:[]);return found.length===1?found[0]:(selected==='auto'?null:selected)
 }
 function weekdayDate(text,base){const m=text.match(/(下週|下周|星期|週|周)([一二三四五六日天])/);if(!m)return '';const w={'日':0,'天':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6},d=new Date(base+'T12:00:00'),offset=(w[m[2]]-d.getDay()+7)%7;return addDays(base,(m[1]==='下週'||m[1]==='下周')?(offset||7):offset)}
@@ -164,7 +167,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)r
 function validateBackup(v){if(!v||typeof v!=='object'||v.format!=='taskflow-ai-backup'||v.version!==1||!v.data||typeof v.data!=='object')throw Error('檔案不是有效的 TaskFlow AI 備份格式。');const ta=v.data[TASK_KEY],li=v.data[LIFE_KEY];if(!Array.isArray(ta)||!Array.isArray(li))throw Error('備份中的任務或生活行程不是清單格式。');for(const [i,t] of ta.entries()){if(!t||typeof t!=='object'||typeof t.title!=='string')throw Error(`第 ${i+1} 筆任務資料格式不正確。`);if(t.workspace!==undefined&&!['study','business'].includes(t.workspace))throw Error(`第 ${i+1} 筆任務工作區無效。`);if(t.priority!==undefined&&!['高','中','低'].includes(t.priority))throw Error(`第 ${i+1} 筆任務優先度無效。`);if(t.minutes!==undefined&&(typeof t.minutes!=='number'||!Number.isFinite(t.minutes)||t.minutes<0))throw Error(`第 ${i+1} 筆任務預估時間無效。`)}for(const [i,x] of li.entries()){if(!x||typeof x!=='object'||typeof x.title!=='string')throw Error(`第 ${i+1} 筆生活行程資料格式不正確。`);if(x.date&& !/^\d{4}-\d{2}-\d{2}$/.test(x.date))throw Error(`第 ${i+1} 筆生活行程日期格式無效。`)}return v}
 $('exportBackup').addEventListener('click',()=>{try{const data={format:'taskflow-ai-backup',version:1,exportedAt:new Date().toISOString(),data:{[TASK_KEY]:tasks,[LIFE_KEY]:events}};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`taskflow-ai-backup-${today()}.json`;a.click();URL.revokeObjectURL(url);$('backupNotice').textContent='備份檔已產生。請確認瀏覽器已完成下載。';$('backupNotice').classList.remove('hidden')}catch(err){showBackupError(err)}});
 function showBackupError(err){$('backupNotice').textContent=err instanceof Error?err.message:'處理備份時發生錯誤。';$('backupNotice').classList.remove('hidden')}
-$('importFile').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{const raw=await file.text(),backup=validateBackup(JSON.parse(raw));if(!confirm('匯入會取代目前所有任務與生活行程。確定繼續嗎？'))return;const oldT=localStorage.getItem(TASK_KEY),oldL=localStorage.getItem(LIFE_KEY);try{localStorage.setItem(TASK_KEY,JSON.stringify(backup.data[TASK_KEY]));localStorage.setItem(LIFE_KEY,JSON.stringify(backup.data[LIFE_KEY]))}catch(err){try{oldT===null?localStorage.removeItem(TASK_KEY):localStorage.setItem(TASK_KEY,oldT);oldL===null?localStorage.removeItem(LIFE_KEY):localStorage.setItem(LIFE_KEY,oldL)}catch{}throw Error('匯入失敗，已嘗試回復原有資料。'+(err instanceof Error?' '+err.message:''))}tasks=loadArray(TASK_KEY);events=loadArray(LIFE_KEY);renderAll();$('backupNotice').textContent='備份匯入成功。';$('backupNotice').classList.remove('hidden')}catch(err){showBackupError(err)}finally{$('importFile').value=''}});
+$('importFile').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{const raw=await file.text(),backup=validateBackup(JSON.parse(raw));if(!confirm('匯入會取代目前所有任務與生活行程。確定繼續嗎？'))return;const oldT=safeStorage.getItem(TASK_KEY),oldL=localStorage.getItem(LIFE_KEY);try{safeStorage.setItem(TASK_KEY,JSON.stringify(backup.data[TASK_KEY]));localStorage.setItem(LIFE_KEY,JSON.stringify(backup.data[LIFE_KEY]))}catch(err){try{oldT===null?safeStorage.removeItem(TASK_KEY):localStorage.setItem(TASK_KEY,oldT);oldL===null?localStorage.removeItem(LIFE_KEY):localStorage.setItem(LIFE_KEY,oldL)}catch{}throw Error('匯入失敗，已嘗試回復原有資料。'+(err instanceof Error?' '+err.message:''))}tasks=loadArray(TASK_KEY);events=loadArray(LIFE_KEY);renderAll();$('backupNotice').textContent='備份匯入成功。';$('backupNotice').classList.remove('hidden')}catch(err){showBackupError(err)}finally{$('importFile').value=''}});
 $('taskDate').value=today();$('lifeDate').value=today();switchView('overview');renderAll();
 })();
 </script>
