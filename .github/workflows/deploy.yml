@@ -1,4 +1,4 @@
-name: Publish TaskFlow AI to GitHub Pages
+name: Publish TaskFlow AI assignment to GitHub Pages
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout assignment branch
         uses: actions/checkout@v4
 
       - name: Validate standalone HTML and inline JavaScript
@@ -43,6 +43,30 @@ jobs:
           console.log(`Validated standalone HTML (${Buffer.byteLength(html)} bytes), ${scripts.length} inline script(s).`);
           NODE
 
+      - name: Checkout current master site
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          path: site-build
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: site-build/package-lock.json
+
+      - name: Build the current master site
+        working-directory: site-build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Add the assignment as a separate page
+        run: |
+          mkdir -p site-build/dist/assignment
+          cp site/index.html site-build/dist/assignment/index.html
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
@@ -51,7 +75,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./site
+          path: ./site-build/dist
 
       - name: Deploy to GitHub Pages
         id: deployment
